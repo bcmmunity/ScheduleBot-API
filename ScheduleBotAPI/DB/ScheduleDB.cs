@@ -13,73 +13,17 @@ namespace ScheduleBotAPI.DB
             _db = new DB().Connect();
         }
 
-        public void AddUniversity(string name)
+        public void AddScheduleWeek(string university, string facility, string course, string group, byte type, ScheduleWeek week)
         {
-            if (!IsUniversityExist(name))
-            {
-                University un = new University { Name = name };
-
-                _db.Universities.Add(un);
-                _db.SaveChanges();
-            }
-        }
-
-        public void AddFacility(string university, string name)
-        {
-            if (!IsFacilityExist(university, name))
-            {
-                Facility facility = new Facility
-                {
-                    Name = name,
-                    University = _db.Universities.FirstOrDefault(n => n.Name == university)
-                };
-
-                _db.Facilities.Add(facility);
-                _db.SaveChanges();
-            }
-        }
-
-        public void AddCourse(string university, string facility, string name)
-        {
-            if (!IsCourseExist(university, facility, name))
-            {
-                Course co = new Course
-                {
-                    Name = name,
-                    Facility = _db.Facilities
-                        .Where(n => n.University == _db.Universities.FirstOrDefault(m => m.Name == university))
-                        .FirstOrDefault(x => x.Name == facility)
-                };
-
-                _db.Courses.Add(co);
-                _db.SaveChanges();
-            }
-        }
-
-        public void AddGroup(string university, string facility, string course, string name, byte type)
-        {
-            if (!IsGroupExist(university, facility, course, name))
-            {
-                Group gr = new Group
-                {
-                    Name = name,
-                    ScheduleType = type,
-                    Course = _db.Courses.Where(l => l.Facility == _db.Facilities
-                                                        .Where(n => n.University == _db.Universities
-                                                                        .FirstOrDefault(m => m.Name == university))
-                                                        .FirstOrDefault(x => x.Name == facility))
-                        .FirstOrDefault(x => x.Name == course)
-                };
-
-                _db.Groups.Add(gr);
-                _db.SaveChanges();
-            }
-        }
-
-
-
-        public void AddScheduleWeek(string university, string facility, string course, string group, ScheduleWeek week)
-        {
+            if (!IsUniversityExist(university))
+                AddUniversity(university);
+            if (!IsFacilityExist(university,facility))
+                AddFacility(university,facility);
+            if (!IsCourseExist(university,facility,course))
+                AddCourse(university,facility,course);
+            if (!IsGroupExist(university,facility,course,group))
+                AddGroup(university,facility,course,group,type);
+            
             week.Group = _db.Groups.Where(c => c.Course == _db.Courses
                                                    .Where(ll => ll.Facility == _db.Facilities
                                                                     .Where(n => n.University == _db.Universities
@@ -123,21 +67,70 @@ namespace ScheduleBotAPI.DB
             _db.SaveChanges();
         }
 
-        public void AddTeacher(string name, long phoneNumber)
+
+        private void AddUniversity(string name)
         {
-            if (_db.Teachers.FirstOrDefault(t => t.Name == name) == null)
+            if (!IsUniversityExist(name))
             {
-                Teacher teacher = new Teacher
-                {
-                    Name = name,
-                    PhoneNumber = phoneNumber
-                };
+                University un = new University { Name = name };
 
-
-                _db.Teachers.Add(teacher);
+                _db.Universities.Add(un);
                 _db.SaveChanges();
             }
         }
+
+        private void AddFacility(string university, string name)
+        {
+            if (!IsFacilityExist(university, name))
+            {
+                Facility facility = new Facility
+                {
+                    Name = name,
+                    University = _db.Universities.FirstOrDefault(n => n.Name == university)
+                };
+
+                _db.Facilities.Add(facility);
+                _db.SaveChanges();
+            }
+        }
+
+        private void AddCourse(string university, string facility, string name)
+        {
+            if (!IsCourseExist(university, facility, name))
+            {
+                Course co = new Course
+                {
+                    Name = name,
+                    Facility = _db.Facilities
+                        .Where(n => n.University == _db.Universities.FirstOrDefault(m => m.Name == university))
+                        .FirstOrDefault(x => x.Name == facility)
+                };
+
+                _db.Courses.Add(co);
+                _db.SaveChanges();
+            }
+        }
+
+        private void AddGroup(string university, string facility, string course, string name, byte type)
+        {
+            if (!IsGroupExist(university, facility, course, name))
+            {
+                Group gr = new Group
+                {
+                    Name = name,
+                    ScheduleType = type,
+                    Course = _db.Courses.Where(l => l.Facility == _db.Facilities
+                                                        .Where(n => n.University == _db.Universities
+                                                                        .FirstOrDefault(m => m.Name == university))
+                                                        .FirstOrDefault(x => x.Name == facility))
+                        .FirstOrDefault(x => x.Name == course)
+                };
+
+                _db.Groups.Add(gr);
+                _db.SaveChanges();
+            }
+        }
+
 
 
         private bool IsUniversityExist(string university)

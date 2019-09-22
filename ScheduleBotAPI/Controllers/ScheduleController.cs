@@ -19,7 +19,8 @@ namespace ScheduleBotAPI.Controllers
                 University = "НИТУ МИСиС",
                 Facility = "ИТАСУ",
                 Course = "1",
-                Group = "БИСТ-17-1 1 подгруппа"
+                Group = "БИСТ-17-1 1 подгруппа",
+                Type = 2
             };
             return Ok(p);
         }
@@ -33,31 +34,8 @@ namespace ScheduleBotAPI.Controllers
                 postResponse.Week != null)
             {
                 _scheduleDb.AddScheduleWeek(postResponse.University, postResponse.Facility, postResponse.Course,
-                    postResponse.Group, postResponse.Week);
+                    postResponse.Group,postResponse.Type, postResponse.Week);
                 return Ok("week");
-            }
-            if (!string.IsNullOrEmpty(postResponse.University) && !string.IsNullOrEmpty(postResponse.Facility) &&
-                !string.IsNullOrEmpty(postResponse.Course) && !string.IsNullOrEmpty(postResponse.Group))
-            {
-                _scheduleDb.AddGroup(postResponse.University, postResponse.Facility, postResponse.Course,
-                    postResponse.Group, postResponse.Type);
-                return Ok("group");
-            }
-            if (!string.IsNullOrEmpty(postResponse.University) && !string.IsNullOrEmpty(postResponse.Facility) &&
-                !string.IsNullOrEmpty(postResponse.Course))
-            {
-                _scheduleDb.AddCourse(postResponse.University, postResponse.Facility, postResponse.Course);
-                return Ok("course");
-            }
-            if (!string.IsNullOrEmpty(postResponse.University) && !string.IsNullOrEmpty(postResponse.Facility))
-            {
-                _scheduleDb.AddFacility(postResponse.University, postResponse.Facility);
-                return Ok("facility");
-            }
-            if (!string.IsNullOrEmpty(postResponse.University))
-            {
-                _scheduleDb.AddUniversity(postResponse.University);
-                return Ok("university");
             }
 
 
