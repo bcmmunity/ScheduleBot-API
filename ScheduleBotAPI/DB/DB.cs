@@ -21,5 +21,9 @@ namespace ScheduleBotAPI.DB
 
             return new MyContext(optionsBuilder.Options);
         }
+        public string GetConnectionString()
+        {
+            return AppConfiguration.GetConnectionString("DefaultConnection");
+        }
     }
 }

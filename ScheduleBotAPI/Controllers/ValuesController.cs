@@ -14,7 +14,7 @@ namespace ScheduleBotAPI.Controllers
         [HttpGet]
         public ActionResult<IEnumerable<string>> Get()
         {
-            return new string[] { "value1", "value2" };
+            return new string[] { new DB.DB().GetConnectionString().Split(';').First()};
         }
 
         // GET api/values/5

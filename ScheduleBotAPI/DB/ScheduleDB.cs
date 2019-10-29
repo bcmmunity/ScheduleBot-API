@@ -1,5 +1,8 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Query.ExpressionTranslators.Internal;
 using ScheduleBotAPI.Models;
 
 namespace ScheduleBotAPI.DB
@@ -13,7 +16,8 @@ namespace ScheduleBotAPI.DB
             _db = new DB().Connect();
         }
 
-        public void AddScheduleWeek(string university, string facility, string course, string group, byte type, ScheduleWeek week)
+        public void 
+            AddScheduleWeek(string university, string facility, string course, string group, byte type, ScheduleWeek week)
         {
             if (!IsUniversityExist(university))
                 AddUniversity(university);
@@ -52,17 +56,11 @@ namespace ScheduleBotAPI.DB
 
             if (oldScheduleWeek != null)
             {
-                oldScheduleWeek.Day.Clear();
-
-
-                foreach (var day in week.Day)
-                {
-                    oldScheduleWeek.Day.Add(day);
-                }
+                _db.ScheduleWeeks.Remove(oldScheduleWeek);
             }
 
-            else
-                _db.ScheduleWeeks.Add(week);
+          
+            AddWeek(week);
 
             _db.SaveChanges();
         }
@@ -131,7 +129,96 @@ namespace ScheduleBotAPI.DB
             }
         }
 
+        private void AddWeek(ScheduleWeek week)
+        {
+            List<ScheduleDay> days = new List<ScheduleDay>();
+            foreach (var day in week.Day)
+            {
+                days.Add(AddDay(day));
+            }
 
+            _db.ScheduleWeeks.Add(new ScheduleWeek
+            {
+                Group = week.Group,
+                Week = week.Week,
+                Day = days
+            });
+            _db.SaveChanges();
+        }
+
+        private ScheduleDay AddDay(ScheduleDay day)
+        {
+            List<Lesson> lessons = new List<Lesson>();
+            foreach (var lesson in day.Lesson)
+            {
+                string names = String.Empty;
+                if (lesson.TeacherLessons != null)
+                {
+                    
+
+                    foreach (var teacher in lesson.TeacherLessons)
+                    {
+                        if (teacher.Teacher != null)
+                            names += teacher.Teacher.Name + " | ";
+                    }
+                }
+
+                Lesson a = new Lesson
+                {
+                    Name = lesson.Name,
+                    Number = lesson.Number,
+                    Room = lesson.Room,
+                    Time = lesson.Time,
+                    Type = lesson.Type,
+                    TeachersNames = names
+                };
+
+                _db.Lessons.Add(a);
+                _db.SaveChanges();
+                lessons.Add(a);
+
+                if (lesson.TeacherLessons == null)
+                    continue;
+                int lessonId = a.LessonId;
+                foreach (var teacher in lesson.TeacherLessons)
+                {
+                    if (teacher.Teacher != null)
+                    {
+                        var teacherId = 0;
+                        if (_db.Teachers.FirstOrDefault(t => t.Name == teacher.Teacher.Name) == null)
+                        {
+                            _db.Teachers.Add(teacher.Teacher);
+                            _db.SaveChanges();
+                            teacherId = teacher.Teacher.TeacherId;
+
+                        }
+                        else
+                        {
+                            teacherId = _db.Teachers.FirstOrDefault(t => t.Name == teacher.Teacher.Name).TeacherId;
+                        }
+                        
+                        _db.Lessons.Find(lessonId).TeacherLessons.Add(new TeacherLesson
+                        {
+                            LessonId = lessonId,
+                            TeacherId = teacherId
+                        });
+                        _db.Lessons.Update(lesson);
+                        _db.SaveChanges();
+                    }
+
+                }
+            }
+
+            ScheduleDay dayx = new ScheduleDay
+            {
+                Day = day.Day,
+                Date = day.Date,
+                Lesson = lessons
+            };
+            _db.ScheduleDays.Add(dayx);
+            _db.SaveChanges();
+            return dayx;
+        }
 
         private bool IsUniversityExist(string university)
         {
