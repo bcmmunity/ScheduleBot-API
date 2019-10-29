@@ -1,19 +1,24 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
+using System.Data.SqlClient;
 using System.Linq;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Query.ExpressionTranslators.Internal;
+using Dapper;
 using ScheduleBotAPI.Models;
 
 namespace ScheduleBotAPI.DB
 {
     public class ScheduleDB
     {
-        private readonly MyContext _db;
+      //  private readonly MyContext _db;
 
+        string connectionString;
         public ScheduleDB()
-        {
-            _db = new DB().Connect();
+        { 
+
+        DB db = new DB();
+        connectionString = db.GetConnectionString();
+        //_db = new DB().Connect();
         }
 
         public void 
@@ -27,42 +32,76 @@ namespace ScheduleBotAPI.DB
                 AddCourse(university,facility,course);
             if (!IsGroupExist(university,facility,course,group))
                 AddGroup(university,facility,course,group,type);
-            
-            week.Group = _db.Groups.Where(c => c.Course == _db.Courses
-                                                   .Where(ll => ll.Facility == _db.Facilities
-                                                                    .Where(n => n.University == _db.Universities
-                                                                                    .FirstOrDefault(m =>
-                                                                                        m.Name == university))
-                                                                    .FirstOrDefault(x => x.Name == facility))
-                                                   .FirstOrDefault(x => x.Name == course))
-                .FirstOrDefault(v => v.Name == group);
 
-
-            University universitym = _db.Universities.FirstOrDefault(m => m.Name == university);
-
-            Facility facultym = _db.Facilities.Where(l => l.University == universitym)
-                .FirstOrDefault(t => t.Name == facility);
-
-            Course coursem = _db.Courses.Where(o => o.Facility == facultym)
-                .FirstOrDefault(t => t.Name == course);
-
-            Group groupm = _db.Groups.Where(n => n.Course == coursem)
-                .FirstOrDefault(t => t.Name == group);
-
-            ScheduleWeek oldScheduleWeek = _db.ScheduleWeeks
-                .Include(v => v.Day)
-                .Where(n => n.Group == groupm)
-                .FirstOrDefault(m => m.Week == week.Week);
-
-            if (oldScheduleWeek != null)
+            using (IDbConnection db = new SqlConnection(connectionString))
             {
-                _db.ScheduleWeeks.Remove(oldScheduleWeek);
+                int universityId =
+                    db.QueryFirstOrDefault<int>("SELECT UniversityId FROM Universities WHERE Name = @university",
+                        new { university });
+                int facilityId = db.QueryFirstOrDefault<int>(
+                    "SELECT FacilityId FROM Facilities WHERE UniversityId = @universityId and Name = @facility",
+                    new { universityId, facility });
+                int courseId = db.QueryFirstOrDefault<int>(
+                    "SELECT CourseId FROM Courses WHERE FacilityId = @facilityId and Name = @course",
+                    new { facilityId, course });
+                int groupId = db.QueryFirstOrDefault<int>(
+                    "SELECT GroupId FROM Groups WHERE CourseId = @courseId and Name = @group",
+                    new { courseId, group });
+
+                int scheduleWeekId = GetScheduleWeekId(groupId, week.Week);
+                if (scheduleWeekId != 0)
+                {
+                    DeleteWeek(scheduleWeekId);
+                }
+
+                //AddWeek
+                int insertedScheduleWeekId = db.QueryFirstOrDefault<int>("INSERT INTO ScheduleWeeks (Week, GroupId) Values (@weekNum, @groupId); SELECT SCOPE_IDENTITY()", new { weekNum = week.Week, groupId });
+                foreach (var day in week.Day)
+                {
+                    int insertedScheduleDayId = db.QueryFirstOrDefault<int>("INSERT INTO ScheduleDays (ScheduleWeekId, Day, Date) Values (@insertedScheduleWeekId, @dayNum, '0001-01-01 00:00:00.0000000'); SELECT SCOPE_IDENTITY()", new { insertedScheduleWeekId, dayNum = day.Day });
+                    foreach (var lesson in day.Lesson)
+                    {
+                        string names = String.Empty;
+                        if (lesson.TeacherLessons != null)
+                        {
+                            int i = 0;
+
+                            foreach (var teacher in lesson.TeacherLessons)
+                            {
+                                if (teacher.Teacher != null)
+                                {
+                                    if (i == 0)
+                                        names += teacher.Teacher.Name;
+                                    else
+                                        names += " | " + teacher.Teacher.Name ;
+                                    i++;
+                                }
+                            }
+                        }
+                        int insertedLessonId = db.QueryFirstOrDefault<int>("INSERT INTO Lessons (Number, Name, Type, Time, Room, TeachersNames, ScheduleDayId) Values (@number,@name,@type,@time,@room,@names,@insertedScheduleDayId); SELECT SCOPE_IDENTITY()", new { number = lesson.Number, name = lesson.Name, type = lesson.Type, time = lesson.Time, room = lesson.Room, names, insertedScheduleDayId });
+
+                        if (lesson.TeacherLessons == null)
+                            continue;
+                        foreach (var teacher in lesson.TeacherLessons)
+                        {
+                            if (teacher.Teacher != null)
+                            {
+                                int teacherId = db.QueryFirstOrDefault<int>("SELECT TeacherId FROM Teachers WHERE Name = @teacherName", new {teacherName = teacher.Teacher.Name });
+                                if (teacherId == 0)
+                                {
+                                    teacherId = db.QueryFirstOrDefault<int>("INSERT INTO Teachers (Name, PhoneNumber) Values (@teacherName,0); SELECT SCOPE_IDENTITY()", new { teacherName = teacher.Teacher.Name });
+                                }
+
+                                db.Execute(
+                                    "INSERT INTO TeacherLesson (TeacherId, LessonId, TeacherLessonId) Values (@teacherId, @insertedLessonId,0)",
+                                    new {teacherId, insertedLessonId});
+                            }
+
+                        }
+                    }
+                }
+                
             }
-
-          
-            AddWeek(week);
-
-            _db.SaveChanges();
         }
 
 
@@ -70,10 +109,10 @@ namespace ScheduleBotAPI.DB
         {
             if (!IsUniversityExist(name))
             {
-                University un = new University { Name = name };
-
-                _db.Universities.Add(un);
-                _db.SaveChanges();
+                using (IDbConnection db = new SqlConnection(connectionString))
+                {
+                    db.Execute("INSERT INTO Universities (Name) Values (@name)", new {name});
+                }
             }
         }
 
@@ -81,14 +120,14 @@ namespace ScheduleBotAPI.DB
         {
             if (!IsFacilityExist(university, name))
             {
-                Facility facility = new Facility
+                using (IDbConnection db = new SqlConnection(connectionString))
                 {
-                    Name = name,
-                    University = _db.Universities.FirstOrDefault(n => n.Name == university)
-                };
-
-                _db.Facilities.Add(facility);
-                _db.SaveChanges();
+                    int universityId =
+                        db.QueryFirstOrDefault<int>("SELECT UniversityId FROM Universities WHERE Name = @university",
+                            new {university});
+                    db.Execute("INSERT INTO Facilities (Name, UniversityId) Values (@name, @universityId)",
+                        new {name, universityId});
+                }
             }
         }
 
@@ -96,16 +135,17 @@ namespace ScheduleBotAPI.DB
         {
             if (!IsCourseExist(university, facility, name))
             {
-                Course co = new Course
+                using (IDbConnection db = new SqlConnection(connectionString))
                 {
-                    Name = name,
-                    Facility = _db.Facilities
-                        .Where(n => n.University == _db.Universities.FirstOrDefault(m => m.Name == university))
-                        .FirstOrDefault(x => x.Name == facility)
-                };
+                    int universityId =
+                    db.QueryFirstOrDefault<int>("SELECT UniversityId FROM Universities WHERE Name = @university",
+                        new { university });
+                    int facilityId = db.QueryFirstOrDefault<int>("SELECT FacilityId FROM Facilities WHERE UniversityId = @universityId and Name = @facility",
+                        new { universityId, facility });
+                    db.Execute("INSERT INTO Courses(Name, FacilityId) Values (@name, @facilityId)",
+                        new { name, facilityId });
 
-                _db.Courses.Add(co);
-                _db.SaveChanges();
+                }
             }
         }
 
@@ -113,172 +153,118 @@ namespace ScheduleBotAPI.DB
         {
             if (!IsGroupExist(university, facility, course, name))
             {
-                Group gr = new Group
+                using (IDbConnection db = new SqlConnection(connectionString))
                 {
-                    Name = name,
-                    ScheduleType = type,
-                    Course = _db.Courses.Where(l => l.Facility == _db.Facilities
-                                                        .Where(n => n.University == _db.Universities
-                                                                        .FirstOrDefault(m => m.Name == university))
-                                                        .FirstOrDefault(x => x.Name == facility))
-                        .FirstOrDefault(x => x.Name == course)
-                };
-
-                _db.Groups.Add(gr);
-                _db.SaveChanges();
-            }
-        }
-
-        private void AddWeek(ScheduleWeek week)
-        {
-            List<ScheduleDay> days = new List<ScheduleDay>();
-            foreach (var day in week.Day)
-            {
-                days.Add(AddDay(day));
-            }
-
-            _db.ScheduleWeeks.Add(new ScheduleWeek
-            {
-                Group = week.Group,
-                Week = week.Week,
-                Day = days
-            });
-            _db.SaveChanges();
-        }
-
-        private ScheduleDay AddDay(ScheduleDay day)
-        {
-            List<Lesson> lessons = new List<Lesson>();
-            foreach (var lesson in day.Lesson)
-            {
-                string names = String.Empty;
-                if (lesson.TeacherLessons != null)
-                {
-                    
-
-                    foreach (var teacher in lesson.TeacherLessons)
-                    {
-                        if (teacher.Teacher != null)
-                            names += teacher.Teacher.Name + " | ";
-                    }
-                }
-
-                Lesson a = new Lesson
-                {
-                    Name = lesson.Name,
-                    Number = lesson.Number,
-                    Room = lesson.Room,
-                    Time = lesson.Time,
-                    Type = lesson.Type,
-                    TeachersNames = names
-                };
-
-                _db.Lessons.Add(a);
-                _db.SaveChanges();
-                lessons.Add(a);
-
-                if (lesson.TeacherLessons == null)
-                    continue;
-                int lessonId = a.LessonId;
-                foreach (var teacher in lesson.TeacherLessons)
-                {
-                    if (teacher.Teacher != null)
-                    {
-                        var teacherId = 0;
-                        if (_db.Teachers.FirstOrDefault(t => t.Name == teacher.Teacher.Name) == null)
-                        {
-                            _db.Teachers.Add(teacher.Teacher);
-                            _db.SaveChanges();
-                            teacherId = teacher.Teacher.TeacherId;
-
-                        }
-                        else
-                        {
-                            teacherId = _db.Teachers.FirstOrDefault(t => t.Name == teacher.Teacher.Name).TeacherId;
-                        }
-                        
-                        _db.Lessons.Find(lessonId).TeacherLessons.Add(new TeacherLesson
-                        {
-                            LessonId = lessonId,
-                            TeacherId = teacherId
-                        });
-                        _db.Lessons.Update(lesson);
-                        _db.SaveChanges();
-                    }
-
+                    int universityId =
+                        db.QueryFirstOrDefault<int>("SELECT UniversityId FROM Universities WHERE Name = @university",
+                            new {university});
+                    int facilityId = db.QueryFirstOrDefault<int>(
+                        "SELECT FacilityId FROM Facilities WHERE UniversityId = @universityId and Name = @facility",
+                        new {universityId, facility});
+                    int courseId = db.QueryFirstOrDefault<int>(
+                        "SELECT CourseId FROM Courses WHERE FacilityId = @facilityId and Name = @course",
+                        new {facilityId, course});
+                    db.Execute("INSERT INTO Groups (Name, CourseId, ScheduleType) Values (@name, @courseId, @type)",
+                        new { name, courseId, type });
                 }
             }
+        }
 
-            ScheduleDay dayx = new ScheduleDay
+        private void DeleteWeek(int scheduleWeekId)
+        {
+            using (IDbConnection db = new SqlConnection(connectionString))
             {
-                Day = day.Day,
-                Date = day.Date,
-                Lesson = lessons
-            };
-            _db.ScheduleDays.Add(dayx);
-            _db.SaveChanges();
-            return dayx;
+                List<ScheduleDay> days = db
+                    .Query<ScheduleDay>("SELECT * FROM ScheduleDays WHERE ScheduleWeekId = @scheduleWeekId",
+                        new {scheduleWeekId}).ToList();
+                foreach (var day in days)
+                {
+                    int scheduleDayId = day.ScheduleDayId;
+                    List<Lesson> lessons = db
+                        .Query<Lesson>("SELECT * FROM Lessons WHERE ScheduleDayId = @scheduleDayId", 
+                            new { scheduleDayId }).ToList();
+                    foreach (var lesson in lessons)
+                    {
+                        int lessonId = lesson.LessonId;
+                        List<TeacherLesson> teacherLessons = db
+                            .Query<TeacherLesson>("SELECT * FROM TeacherLesson WHERE LessonId = @lessonId",
+                                new { lessonId }).ToList();
+                        foreach (var teacherLesson in teacherLessons)
+                        {
+                            int teacherLessonId = teacherLesson.TeacherLessonId;
+                            db.Execute("DELETE FROM TeacherLesson where TeacherLessonId = @teacherLessonId",
+                                new {teacherLessonId});
+                        }
+                        db.Execute("DELETE FROM Lessons where LessonId = @lessonId",
+                            new { lessonId });
+                    }
+                    db.Execute("DELETE FROM ScheduleDays where ScheduleDayId = @scheduleDayId",
+                        new { scheduleDayId });
+                }
+                db.Execute("DELETE FROM ScheduleWeeks where ScheduleWeekId = @scheduleWeekId",
+                    new { scheduleWeekId });
+
+            } 
         }
 
-        private bool IsUniversityExist(string university)
+        private int GetScheduleWeekId(int groupId, int weekNumber)
         {
-            University universitym = _db.Universities.FirstOrDefault(m => m.Name == university);
-
-            bool result = universitym != null;
-
-            return result;
+            using (IDbConnection db = new SqlConnection(connectionString))
+            {
+                return db.QueryFirstOrDefault<int>(
+                    "SELECT ScheduleWeekId FROM ScheduleWeeks WHERE GroupId = @groupId and Week = @weekNumber",
+                    new {groupId, weekNumber});
+            }
         }
 
-        private bool IsFacilityExist(string university, string facility)
+        public bool IsUniversityExist(string university)
         {
-            University universitym = _db.Universities.FirstOrDefault(m => m.Name == university);
-            if (universitym == null)
-                return false;
-            Facility facultym = _db.Facilities.Where(l => l.University == universitym)
-                .FirstOrDefault(t => t.Name == facility);
+            using (IDbConnection db = new SqlConnection(connectionString))
+            {
+                University universitym = db.QueryFirstOrDefault<University>("SELECT * FROM Universities WHERE Name = @university", new { university });
+                bool result = universitym != null;
 
-            bool result = facultym != null;
-
-            return result;
+                return result;
+            }
         }
 
-        private bool IsCourseExist(string university, string facility, string course)
+        public bool IsFacilityExist(string university, string facility)
         {
-            University universitym = _db.Universities.FirstOrDefault(m => m.Name == university);
-            if (universitym == null)
-                return false;
-            Facility facultym = _db.Facilities.Where(l => l.University == universitym)
-                .FirstOrDefault(t => t.Name == facility);
-            if (facultym == null)
-                return false;
-            Course coursem = _db.Courses.Where(o => o.Facility == facultym).FirstOrDefault(t => t.Name == course);
+            using (IDbConnection db = new SqlConnection(connectionString))
+            {
+                Facility facultym = db.QueryFirstOrDefault<Facility>(
+                        "SELECT f.FacilityId, f.Name, f.UniversityId FROM Facilities as f JOIN Universities as u on f.UniversityId = u.UniversityId where u.Name = @university and f.Name = @facility",
+                        new { university, facility });
+                bool result = facultym != null;
 
-            bool result = coursem != null;
-
-            return result;
+                return result;
+            }
         }
 
-        private bool IsGroupExist(string university, string facility, string course, string group)
+        public bool IsCourseExist(string university, string facility, string course)
         {
-            University universitym = _db.Universities.FirstOrDefault(m => m.Name == university);
-            if (universitym == null)
-                return false;
-            Facility facultym = _db.Facilities.Where(l => l.University == universitym)
-                .FirstOrDefault(t => t.Name == facility);
-            if (facultym == null)
-                return false;
-            Course coursem = _db.Courses.Where(o => o.Facility == facultym)
-                .FirstOrDefault(t => t.Name == course);
-            if (course == null)
-                return false;
-            Group groupm = _db.Groups.Where(n => n.Course == coursem)
-                .FirstOrDefault(t => t.Name == group);
+            using (IDbConnection db = new SqlConnection(connectionString))
+            {
+                Course coursem = db.QueryFirstOrDefault<Course>(
+                    "SELECT c.CourseId, c.Name, c.FacilityId FROM Courses as c JOIN Facilities as f on c.FacilityId = f.FacilityId JOIN Universities as u on f.UniversityId = u.UniversityId where u.Name = @university and f.Name = @facility and c.Name = @course",
+                    new { university, facility, course });
+                bool result = coursem != null;
 
-            bool result = groupm != null;
-
-            return result;
+                return result;
+            }
         }
 
+        public bool IsGroupExist(string university, string facility, string course, string group)
+        {
+            using (IDbConnection db = new SqlConnection(connectionString))
+            {
+                Group groupm = db.QueryFirstOrDefault<Group>(
+                    "SELECT g.GroupId, g.Name, g.ScheduleType, g.CourseId FROM Groups as g JOIN Courses as c on c.CourseId = g.CourseId JOIN Facilities as f on c.FacilityId = f.FacilityId JOIN Universities as u on f.UniversityId = u.UniversityId where u.Name = @university and f.Name = @facility and c.Name = @course and g.Name = @group",
+                    new { university, facility, course, group });
+                bool result = groupm != null;
 
+                return result;
+            }
+        }
     }
 }
