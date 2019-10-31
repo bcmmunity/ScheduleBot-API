@@ -7,6 +7,7 @@ namespace ScheduleBotAPI.DB
 {
     public class DB
     {
+        public static bool IsDefault = true;
         public IConfiguration AppConfiguration { get; set; }
         public DB()
         {
@@ -14,16 +15,12 @@ namespace ScheduleBotAPI.DB
             // создаем конфигурацию
             AppConfiguration = builder.Build();
         }
-        public MyContext Connect()
-        {
-            DbContextOptionsBuilder<MyContext> optionsBuilder = new DbContextOptionsBuilder<MyContext>();
-            optionsBuilder.UseSqlServer(AppConfiguration.GetConnectionString("DefaultConnection"));
-
-            return new MyContext(optionsBuilder.Options);
-        }
         public string GetConnectionString()
         {
-            return AppConfiguration.GetConnectionString("DefaultConnection");
+            if(IsDefault)
+                return AppConfiguration.GetConnectionString("DefaultConnection");
+            else
+                return AppConfiguration.GetConnectionString("BetaConnection");
         }
     }
 }

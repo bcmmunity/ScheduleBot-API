@@ -21,6 +21,62 @@ namespace ScheduleBotAPI.DB
         //_db = new DB().Connect();
         }
 
+        public void FixingTeacherLesson()
+        {
+            using (IDbConnection db = new SqlConnection(connectionString))
+            {
+                List<Lesson> alLessons = db.Query<Lesson>("SELECT * FROM Lessons").ToList();
+                foreach (var lesson in alLessons)
+                {
+                    int lessonId = lesson.LessonId;
+                    if (String.IsNullOrEmpty(lesson.TeachersNames))
+                        continue;
+                    if (lesson.TeachersNames.Contains('|'))
+                    {
+                        foreach (var teacher in lesson.TeachersNames.Split('|'))
+                        {
+                            int teacherId =
+                                db.QueryFirstOrDefault<int>("SELECT TeacherId FROM Teachers WHERE Name = @teacher",
+                                    new {teacher});
+                            if (teacherId == 0)
+                            {
+                               teacherId = db.QueryFirstOrDefault<int>( "INSERT INTO Teachers (Name, PhoneNumber) Values (@teacher,0); SELECT SCOPE_IDENTITY()", new { teacher });
+                            
+                            }
+                            int isRowExists =
+                                db.QueryFirstOrDefault<int>(
+                                    "SELECT Count(*) FROM TeacherLesson Where TeacherId = @teacherId and LessonId = @lessonId",
+                                    new {teacherId, lessonId});
+                            if (isRowExists == 0)
+                            {
+                                db.Execute(
+                                    "INSERT INTO TeacherLesson (TeacherId, LessonId, TeacherLessonId) Values (@teacherId, @lessonId,0)",
+                                    new {teacherId, lessonId});
+                            }
+                        }
+
+                    }
+                    else
+                    {
+                        int teacherId =
+                            db.QueryFirstOrDefault<int>("SELECT TeacherId FROM Teachers WHERE Name = @teacher",
+                                new { teacher = lesson.TeachersNames });
+                        int isRowExists =
+                            db.QueryFirstOrDefault<int>(
+                                "SELECT Count(*) FROM TeacherLesson Where TeacherId = @teacherId and LessonId = @lessonId",
+                                new { teacherId, lessonId });
+                        if (isRowExists == 0)
+                        {
+                            db.Execute(
+                                "INSERT INTO TeacherLesson (TeacherId, LessonId, TeacherLessonId) Values (@teacherId, @lessonId,0)",
+                                new { teacherId, lessonId });
+                        }
+                    }
+                }
+            }
+           
+        }
+
         public void 
             AddScheduleWeek(string university, string facility, string course, string group, byte type, ScheduleWeek week)
         {

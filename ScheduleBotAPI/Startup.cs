@@ -27,12 +27,6 @@ namespace ScheduleBotAPI
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-             // получаем строку подключения из файла конфигурации
-            string connection = Configuration.GetConnectionString("DefaultConnection");
-            // добавляем контекст MyContext в качестве сервиса в приложение
-            services.AddDbContext<MyContext>(options =>
-                options.UseSqlServer(connection));
-
             services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1);
         }
 
