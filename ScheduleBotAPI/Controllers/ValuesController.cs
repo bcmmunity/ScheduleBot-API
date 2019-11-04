@@ -16,14 +16,22 @@ namespace ScheduleBotAPI.Controllers
         [HttpGet]
         public ActionResult<IEnumerable<string>> Get()
         {
-            return new string[] { new DB.DB().GetConnectionString().Split(';').First()};
+            return
+                new string[]
+                {
+                    "id = 1 - Get current DB connection, id = 2 - Fixing TeacherLesson, id = 3 - Change DB to Main, id = 4 - Change DB to Beta, id = 5 - Shrink DB"
+                };
         }
-
+        
         // GET api/values/5
         [HttpGet("{id}")]
         public ActionResult<string> Get(int id)
         {
             if (id == 1)
+            {
+                return DB.DB.GetConnectionString().Split(';').First();
+            }
+            else if (id == 2)
             {
                 try
                 {
@@ -37,18 +45,31 @@ namespace ScheduleBotAPI.Controllers
                 }
             }
 
-            else if (id == 2)
+            else if (id == 3)
             {
                 DB.DB.IsDefault = true;
                 return "Result=Changed to Main";
             }
-            else if (id == 3)
+            else if (id == 4)
             {
                 DB.DB.IsDefault = false;
                 return "Result=Changed to Beta";
             }
+            else if (id == 5)
+            {
+                try
+                {
+                    new ScheduleDB().DBResize();
+                    return "Result=Success";
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e);
+                    return "Result=" + e.Message;
+                }
+            }
 
-            return "id = 1 - Fixing TeacherLesson, id = 2 - Change DB to Main, id = 3 - Change DB to Beta";
+            return "Result=Wrong Path";
         }
 
         // POST api/values

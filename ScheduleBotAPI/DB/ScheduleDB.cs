@@ -5,6 +5,7 @@ using System.Data.SqlClient;
 using System.Linq;
 using Dapper;
 using ScheduleBotAPI.Models;
+using ScheduleBotAPI.Models.Post;
 
 namespace ScheduleBotAPI.DB
 {
@@ -14,11 +15,19 @@ namespace ScheduleBotAPI.DB
 
         string connectionString;
         public ScheduleDB()
-        { 
-
-        DB db = new DB();
-        connectionString = db.GetConnectionString();
+        {
+            connectionString = DB.GetConnectionString();
         //_db = new DB().Connect();
+        }
+
+        public void DBResize()
+        {
+            using (IDbConnection db = new SqlConnection(connectionString))
+            {
+                string dbName = connectionString.Split(';')[1].Split('=')[1];
+                db.Execute(
+                    "ALTER DATABASE "+dbName+" SET RECOVERY SIMPLE;DBCC SHRINKFILE ("+dbName+"_Log, 5);ALTER DATABASE "+dbName+" SET RECOVERY FULL;");
+            }
         }
 
         public void FixingTeacherLesson()
@@ -40,8 +49,10 @@ namespace ScheduleBotAPI.DB
                                     new {teacher});
                             if (teacherId == 0)
                             {
-                               teacherId = db.QueryFirstOrDefault<int>( "INSERT INTO Teachers (Name, PhoneNumber) Values (@teacher,0); SELECT SCOPE_IDENTITY()", new { teacher });
-                            
+                              db.Execute( "INSERT INTO Teachers (Name, PhoneNumber) Values (@teacher,0)", new { teacher });
+                               teacherId =
+                                   db.QueryFirstOrDefault<int>("SELECT TeacherId FROM Teachers WHERE Name = @teacher",
+                                       new { teacher });
                             }
                             int isRowExists =
                                 db.QueryFirstOrDefault<int>(
@@ -61,6 +72,13 @@ namespace ScheduleBotAPI.DB
                         int teacherId =
                             db.QueryFirstOrDefault<int>("SELECT TeacherId FROM Teachers WHERE Name = @teacher",
                                 new { teacher = lesson.TeachersNames });
+                        if (teacherId == 0)
+                        {
+                            db.Execute("INSERT INTO Teachers (Name, PhoneNumber) Values (@teacher,0)", new { teacher = lesson.TeachersNames });
+                            teacherId =
+                                db.QueryFirstOrDefault<int>("SELECT TeacherId FROM Teachers WHERE Name = @teacher",
+                                    new { teacher = lesson.TeachersNames });
+                        }
                         int isRowExists =
                             db.QueryFirstOrDefault<int>(
                                 "SELECT Count(*) FROM TeacherLesson Where TeacherId = @teacherId and LessonId = @lessonId",
@@ -78,7 +96,7 @@ namespace ScheduleBotAPI.DB
         }
 
         public void 
-            AddScheduleWeek(string university, string facility, string course, string group, byte type, ScheduleWeek week)
+            AddScheduleWeek(string university, string facility, string course, string group, byte type, PostScheduleWeek week)
         {
             if (!IsUniversityExist(university))
                 AddUniversity(university);
@@ -112,40 +130,40 @@ namespace ScheduleBotAPI.DB
 
                 //AddWeek
                 int insertedScheduleWeekId = db.QueryFirstOrDefault<int>("INSERT INTO ScheduleWeeks (Week, GroupId) Values (@weekNum, @groupId); SELECT SCOPE_IDENTITY()", new { weekNum = week.Week, groupId });
-                foreach (var day in week.Day)
+                foreach (var day in week.Days)
                 {
                     int insertedScheduleDayId = db.QueryFirstOrDefault<int>("INSERT INTO ScheduleDays (ScheduleWeekId, Day, Date) Values (@insertedScheduleWeekId, @dayNum, '0001-01-01 00:00:00.0000000'); SELECT SCOPE_IDENTITY()", new { insertedScheduleWeekId, dayNum = day.Day });
-                    foreach (var lesson in day.Lesson)
+                    foreach (var lesson in day.Lessons)
                     {
                         string names = String.Empty;
-                        if (lesson.TeacherLessons != null)
+                        if (lesson.Teachers.Count != 0)
                         {
                             int i = 0;
 
-                            foreach (var teacher in lesson.TeacherLessons)
+                            foreach (var teacher in lesson.Teachers)
                             {
-                                if (teacher.Teacher != null)
+                                if (!String.IsNullOrEmpty(teacher.Name))
                                 {
                                     if (i == 0)
-                                        names += teacher.Teacher.Name;
+                                        names += teacher.Name;
                                     else
-                                        names += " | " + teacher.Teacher.Name ;
+                                        names += " | " + teacher.Name ;
                                     i++;
                                 }
                             }
                         }
                         int insertedLessonId = db.QueryFirstOrDefault<int>("INSERT INTO Lessons (Number, Name, Type, Time, Room, TeachersNames, ScheduleDayId) Values (@number,@name,@type,@time,@room,@names,@insertedScheduleDayId); SELECT SCOPE_IDENTITY()", new { number = lesson.Number, name = lesson.Name, type = lesson.Type, time = lesson.Time, room = lesson.Room, names, insertedScheduleDayId });
 
-                        if (lesson.TeacherLessons == null)
+                        if (lesson.Teachers.Count == 0)
                             continue;
-                        foreach (var teacher in lesson.TeacherLessons)
+                        foreach (var teacher in lesson.Teachers)
                         {
-                            if (teacher.Teacher != null)
+                            if (!String.IsNullOrEmpty(teacher.Name))
                             {
-                                int teacherId = db.QueryFirstOrDefault<int>("SELECT TeacherId FROM Teachers WHERE Name = @teacherName", new {teacherName = teacher.Teacher.Name });
+                                int teacherId = db.QueryFirstOrDefault<int>("SELECT TeacherId FROM Teachers WHERE Name = @teacherName", new {teacherName = teacher.Name });
                                 if (teacherId == 0)
                                 {
-                                    teacherId = db.QueryFirstOrDefault<int>("INSERT INTO Teachers (Name, PhoneNumber) Values (@teacherName,0); SELECT SCOPE_IDENTITY()", new { teacherName = teacher.Teacher.Name });
+                                    teacherId = db.QueryFirstOrDefault<int>("INSERT INTO Teachers (Name, PhoneNumber) Values (@teacherName,0); SELECT SCOPE_IDENTITY()", new { teacherName = teacher.Name });
                                 }
 
                                 db.Execute(

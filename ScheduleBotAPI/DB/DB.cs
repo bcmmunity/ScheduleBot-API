@@ -8,16 +8,14 @@ namespace ScheduleBotAPI.DB
     public class DB
     {
         public static bool IsDefault = true;
-        public IConfiguration AppConfiguration { get; set; }
-        public DB()
+        public static IConfiguration AppConfiguration { get; set; }
+        public static string GetConnectionString()
         {
             IConfigurationBuilder builder = new ConfigurationBuilder().SetBasePath(Directory.GetCurrentDirectory()).AddJsonFile("appsettings.json");
             // создаем конфигурацию
             AppConfiguration = builder.Build();
-        }
-        public string GetConnectionString()
-        {
-            if(IsDefault)
+
+            if (IsDefault)
                 return AppConfiguration.GetConnectionString("DefaultConnection");
             else
                 return AppConfiguration.GetConnectionString("BetaConnection");
